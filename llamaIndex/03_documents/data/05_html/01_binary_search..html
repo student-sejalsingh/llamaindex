@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Complete notes on Binary Search algorithm">
+    <title>Binary Search - Computer Science Notes</title>
+</head>
+
+<body>
+
+```
+<article>
+
+    <header>
+        <h1>Binary Search</h1>
+
+        <p>
+            <strong>Subject:</strong> Data Structures and Algorithms
+        </p>
+
+        <p>
+            <strong>Difficulty:</strong> Beginner to Intermediate
+        </p>
+    </header>
+
+    <hr>
+
+    <section>
+        <h2>1. Definition</h2>
+
+        <p>
+            Binary Search is an efficient searching algorithm used to find
+            an element in a <strong>sorted array</strong>.
+        </p>
+
+        <p>
+            Instead of checking every element one by one, Binary Search
+            repeatedly divides the search space into two halves.
+        </p>
+    </section>
+
+    <section>
+        <h2>2. Important Requirement</h2>
+
+        <p>
+            Binary Search requires the input data to be sorted.
+        </p>
+
+        <p>
+            For example:
+        </p>
+
+        <pre>
+```
+
+[10, 20, 30, 40, 50, 60, 70] </pre>
+
+```
+        <p>
+            The array is sorted in ascending order, so Binary Search
+            can be applied.
+        </p>
+    </section>
+
+    <section>
+        <h2>3. How Binary Search Works</h2>
+
+        <ol>
+            <li>Find the middle element of the current search range.</li>
+            <li>Compare the middle element with the target.</li>
+            <li>
+                If the middle element is equal to the target,
+                the search is successful.
+            </li>
+            <li>
+                If the target is smaller than the middle element,
+                search in the left half.
+            </li>
+            <li>
+                If the target is larger than the middle element,
+                search in the right half.
+            </li>
+            <li>Repeat until the element is found or the search range becomes empty.</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>4. Example</h2>
+
+        <p>
+            Consider the sorted array:
+        </p>
+
+        <pre>
+```
+
+[10, 20, 30, 40, 50, 60, 70] </pre>
+
+```
+        <p>
+            Suppose we want to search for <strong>60</strong>.
+        </p>
+
+        <h3>Step 1</h3>
+
+        <p>
+            The middle element is 40.
+            Since 60 is greater than 40, we search the right half.
+        </p>
+
+        <pre>
+```
+
+[50, 60, 70] </pre>
+
+```
+        <h3>Step 2</h3>
+
+        <p>
+            The middle element is 60.
+            The target is found.
+        </p>
+    </section>
+
+    <section>
+        <h2>5. Algorithm</h2>
+
+        <pre>
+```
+
+binarySearch(array, target):
+
+```
+low = 0
+high = length(array) - 1
+
+while low <= high:
+
+    mid = low + (high - low) / 2
+
+    if array[mid] == target:
+        return mid
+
+    else if array[mid] < target:
+        low = mid + 1
+
+    else:
+        high = mid - 1
+
+return -1
+        </pre>
+    </section>
+
+    <section>
+        <h2>6. Python Implementation</h2>
+
+        <pre>
+```
+
+def binary_search(arr, target):
+low = 0
+high = len(arr) - 1
+
+```
+while low <= high:
+    mid = low + (high - low) // 2
+
+    if arr[mid] == target:
+        return mid
+
+    elif arr[mid] < target:
+        low = mid + 1
+
+    else:
+        high = mid - 1
+
+return -1
+```
+
+arr = [10, 20, 30, 40, 50, 60, 70]
+
+target = 60
+
+result = binary_search(arr, target)
+
+print(result) </pre> </section>
+
+```
+    <section>
+        <h2>7. Time Complexity</h2>
+
+        <table border="1">
+            <thead>
+                <tr>
+                    <th>Case</th>
+                    <th>Time Complexity</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr>
+                    <td>Best Case</td>
+                    <td>O(1)</td>
+                </tr>
+
+                <tr>
+                    <td>Average Case</td>
+                    <td>O(log n)</td>
+                </tr>
+
+                <tr>
+                    <td>Worst Case</td>
+                    <td>O(log n)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p>
+            The space complexity of the iterative implementation is
+            <strong>O(1)</strong>.
+        </p>
+    </section>
+
+    <section>
+        <h2>8. Binary Search vs Linear Search</h2>
+
+        <table border="1">
+            <thead>
+                <tr>
+                    <th>Feature</th>
+                    <th>Binary Search</th>
+                    <th>Linear Search</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <tr>
+                    <td>Data Requirement</td>
+                    <td>Sorted</td>
+                    <td>Can be unsorted</td>
+                </tr>
+
+                <tr>
+                    <td>Best Case</td>
+                    <td>O(1)</td>
+                    <td>O(1)</td>
+                </tr>
+
+                <tr>
+                    <td>Worst Case</td>
+                    <td>O(log n)</td>
+                    <td>O(n)</td>
+                </tr>
+
+                <tr>
+                    <td>Approach</td>
+                    <td>Divide and conquer</td>
+                    <td>Sequential search</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>9. Advantages</h2>
+
+        <ul>
+            <li>Very efficient for large sorted datasets.</li>
+            <li>Has O(log n) worst-case time complexity.</li>
+            <li>Requires only constant extra space in iterative form.</li>
+            <li>Simple and widely used algorithm.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>10. Disadvantages</h2>
+
+        <ul>
+            <li>The data must be sorted.</li>
+            <li>Maintaining sorted data can be expensive.</li>
+            <li>It is not always suitable for linked lists.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>11. Real-World Applications</h2>
+
+        <ul>
+            <li>Searching in sorted databases.</li>
+            <li>Dictionary and word lookup systems.</li>
+            <li>Finding values in sorted datasets.</li>
+            <li>Competitive programming.</li>
+            <li>Searching ranges and boundaries.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>12. GATE Important Points</h2>
+
+        <ul>
+            <li>Binary Search works on sorted data.</li>
+            <li>Worst-case time complexity is O(log n).</li>
+            <li>Iterative Binary Search uses O(1) auxiliary space.</li>
+            <li>Recursive Binary Search uses O(log n) stack space.</li>
+            <li>Binary Search is based on the divide-and-conquer idea.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>13. Interview Questions</h2>
+
+        <ol>
+            <li>What is Binary Search?</li>
+            <li>Why must the array be sorted?</li>
+            <li>What is the time complexity of Binary Search?</li>
+            <li>What is the space complexity of iterative Binary Search?</li>
+            <li>What is the difference between Binary Search and Linear Search?</li>
+            <li>Can Binary Search be applied to a linked list efficiently?</li>
+            <li>What is the difference between iterative and recursive Binary Search?</li>
+        </ol>
+    </section>
+
+    <section>
+        <h2>14. Summary</h2>
+
+        <p>
+            Binary Search is a divide-and-conquer searching algorithm
+            that repeatedly divides a sorted search space into two halves.
+            It provides O(log n) worst-case time complexity and is much
+            faster than Linear Search for large sorted datasets.
+        </p>
+    </section>
+
+</article>
+```
+
+</body>
+</html>

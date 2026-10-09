@@ -2,7 +2,7 @@ import asyncio
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.ollama import Ollama
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from dotenv import load_dotenv
 
 
@@ -78,7 +78,8 @@ URL: {r['href']}
 
 # Create an agent workflow with our calculator tool
 agent = FunctionAgent(
-    tools=[multiply, add, get_age, get_user_info, weather_tool, file_search_tool, web_search_tool],
+    # tools=[multiply, add, get_age, get_user_info, weather_tool, file_search_tool, web_search_tool],
+    tools=[web_search_tool],
     llm=Ollama(
         model="qwen3:4b",
         request_timeout=360.0,

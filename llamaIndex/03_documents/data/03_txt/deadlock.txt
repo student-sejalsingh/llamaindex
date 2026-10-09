@@ -1,0 +1,1375 @@
+================================================================================
+                    DEADLOCK: A COMPLETE GUIDE
+================================================================================
+
+TABLE OF CONTENTS
+
+   1.  Introduction
+   2.  What Is a Deadlock?
+   3.  Real-World Analogies
+   4.  The Four Necessary Conditions (Coffman Conditions)
+   5.  Modeling Deadlock: Resource Allocation Graphs
+   6.  A Deadlock in Code
+   7.  The Dining Philosophers Problem
+   8.  Deadlock vs. Livelock vs. Starvation
+   9.  Strategies for Handling Deadlock
+   10. Deadlock Prevention
+   11. Deadlock Avoidance and the Banker's Algorithm
+   12. Deadlock Detection
+   13. Deadlock Recovery
+   14. Deadlocks in Databases
+   15. Deadlocks in Distributed Systems
+   16. Finding and Debugging Deadlocks in Practice
+   17. Best Practices
+   18. Review Questions
+   19. Summary
+
+
+================================================================================
+1. INTRODUCTION
+================================================================================
+
+Modern software does many things at once. Operating systems run hundreds of
+processes, web servers handle thousands of simultaneous requests, and
+databases process overlapping transactions. These activities compete for
+shared resources such as memory, files, network connections, database rows,
+and locks. To keep shared data correct, concurrent programs use mutual
+exclusion: only one activity may use a resource at a time, and others must
+wait.
+
+Waiting is necessary, but it carries a danger. If a group of activities each
+hold something the others need, and each is waiting for another member of the
+group to let go, then nobody can proceed. The system does not crash and no
+error message appears. The affected activities simply stop, forever. This
+situation is called a DEADLOCK.
+
+Deadlock is one of the classic problems in computer science. It appears in
+operating system design, multithreaded programming, database engines,
+distributed systems, and even in everyday life. It is also notoriously hard to
+debug, because it often depends on the exact timing of events and may appear
+only once in thousands of runs, usually in production and under heavy load.
+
+This guide explains:
+
+   - what deadlock is and exactly when it can occur;
+   - how to model it with graphs;
+   - how it looks in real code;
+   - the four main approaches to dealing with it (ignore, prevent, avoid,
+     detect and recover);
+   - how databases and distributed systems deal with it;
+   - practical techniques for finding and avoiding deadlocks in your own
+     programs.
+
+
+================================================================================
+2. WHAT IS A DEADLOCK?
+================================================================================
+
+DEFINITION
+
+A set of processes (or threads) is in DEADLOCK if every process in the set is
+waiting for an event that can only be caused by another process in the set.
+
+The "event" is usually the release of a resource. Since every member of the
+set is waiting and none can act, the event never occurs, and the waiting never
+ends.
+
+THE SIMPLEST EXAMPLE
+
+Two threads, T1 and T2, and two locks, A and B.
+
+      Thread T1                      Thread T2
+      ---------                      ---------
+      acquire(A)                     acquire(B)
+      acquire(B)   <-- waits         acquire(A)   <-- waits
+      ...                            ...
+      release(B)                     release(A)
+      release(A)                     release(B)
+
+Consider this order of events:
+
+   1. T1 acquires lock A.
+   2. T2 acquires lock B.
+   3. T1 tries to acquire lock B. It is held by T2, so T1 blocks.
+   4. T2 tries to acquire lock A. It is held by T1, so T2 blocks.
+
+T1 holds A and waits for B. T2 holds B and waits for A. Neither can continue,
+and neither will ever release its lock, because releasing requires finishing
+the work, which requires the other lock. Both threads are stuck permanently.
+
+NOTE ON TIMING
+
+If T1 happened to run both of its acquire operations before T2 started, no
+deadlock would occur: T1 would take A and B, finish, and release them, and
+only then would T2 proceed. The bug is therefore intermittent. It exists in
+the code all the time, but it manifests only under an unlucky interleaving.
+This property is what makes deadlocks so hard to reproduce and test for.
+
+RESOURCES THAT CAN CAUSE DEADLOCK
+
+Resources fall into two broad categories:
+
+   REUSABLE RESOURCES are used by one process at a time and then released
+   without being destroyed. Examples: CPU, memory regions, files, printers,
+   locks and semaphores, database rows, network sockets.
+
+   CONSUMABLE RESOURCES are produced and consumed. Examples: messages,
+   signals, interrupts, items in a buffer. Deadlock can occur when a process
+   waits for a message that will never be sent because the sender is itself
+   blocked waiting for a message from the first process.
+
+Most discussions of deadlock concentrate on reusable resources, but the
+principle is identical.
+
+
+================================================================================
+3. REAL-WORLD ANALOGIES
+================================================================================
+
+TRAFFIC GRIDLOCK
+Four cars arrive simultaneously at a four-way intersection, each one wanting
+to cross the path of the car to its left. Every car occupies the space in
+front of it and waits for the space ahead to clear. The space ahead is
+occupied by the next car, which is also waiting. A cycle of cars blocks one
+another, and nobody can move unless somebody backs up. Backing up is the
+traffic equivalent of "rollback" or "preemption," which we will meet later.
+
+THE NARROW BRIDGE
+A single-lane bridge has cars entering from both ends. If two cars meet in the
+middle, neither can pass, and neither can move forward. Each is holding part
+of the bridge (the resource) that the other needs. A rule such as "give way to
+the car already on the bridge" is a form of deadlock prevention.
+
+THE TWO TOOLS
+Two workers each need a hammer and a screwdriver to finish a job. One grabs
+the hammer, and the other grabs the screwdriver. Each now waits for the other
+tool. A rule such as "always pick up the hammer first" would prevent the
+problem, because the second worker would wait for the hammer without holding
+anything.
+
+THE POLITE STANDOFF
+Two people meet at a door. Each says, "After you," and neither goes through.
+This is closer to livelock, which we discuss later, but it shows how rules
+that seem polite can produce a lack of progress.
+
+THE COMMON PATTERN
+In every example there is:
+   - a limited resource that cannot be shared;
+   - a participant holding one resource while waiting for another;
+   - a circular chain of waiting.
+
+
+================================================================================
+4. THE FOUR NECESSARY CONDITIONS (COFFMAN CONDITIONS)
+================================================================================
+
+In 1971, Edward G. Coffman Jr., Michael J. Elphick, and Arie Shoshani
+identified four conditions that must ALL hold at the same time for a deadlock
+to be possible. These are known as the Coffman conditions.
+
+   CONDITION 1: MUTUAL EXCLUSION
+   At least one resource must be held in a non-shareable mode. Only one
+   process can use it at a time. If a resource could be shared freely (such
+   as a read-only file), no process would need to wait for it.
+
+   CONDITION 2: HOLD AND WAIT
+   A process must be holding at least one resource while waiting to acquire
+   additional resources that are held by others.
+
+   CONDITION 3: NO PREEMPTION
+   Resources cannot be forcibly taken away from a process. They can only be
+   released voluntarily by the process holding them, after it has completed
+   its task.
+
+   CONDITION 4: CIRCULAR WAIT
+   There must exist a set of waiting processes {P0, P1, ..., Pn} such that P0
+   is waiting for a resource held by P1, P1 is waiting for a resource held by
+   P2, and so on, and Pn is waiting for a resource held by P0.
+
+WHY ALL FOUR ARE NEEDED
+
+   - Without mutual exclusion, nobody ever has to wait.
+   - Without hold and wait, a process never waits while holding something, so
+     it never blocks anyone else.
+   - Without no-preemption, the system can take a resource from a blocked
+     process and give it to another, breaking the standoff.
+   - Without circular wait, the chain of waiting ends at some process that is
+     not waiting, which will eventually finish and release its resources.
+
+IMPORTANT DISTINCTION
+
+The four conditions are NECESSARY, not SUFFICIENT. If any one is absent,
+deadlock is impossible. If all four are present, deadlock is POSSIBLE, but it
+does not necessarily exist. For single-instance resources, a circular wait
+does imply a deadlock; for resources with multiple instances, a cycle is
+necessary but not always sufficient (see the next section).
+
+WHY THIS MATTERS
+
+The Coffman conditions give us a blueprint for handling deadlock. To prevent
+deadlock, ensure at least one of the four conditions can never hold. Every
+prevention technique is an attack on one of them.
+
+
+================================================================================
+5. MODELING DEADLOCK: RESOURCE ALLOCATION GRAPHS
+================================================================================
+
+A RESOURCE ALLOCATION GRAPH (RAG) is a directed graph that shows which
+processes hold which resources and which processes are waiting for which
+resources.
+
+NODES
+   - Process nodes, drawn as circles: P1, P2, P3, ...
+   - Resource nodes, drawn as rectangles: R1, R2, ... Each dot inside a
+     rectangle represents one instance of that resource.
+
+EDGES
+   - REQUEST EDGE:     P -> R   means process P is waiting for resource R.
+   - ASSIGNMENT EDGE:  R -> P   means an instance of R is held by process P.
+
+EXAMPLE: A DEADLOCKED SYSTEM
+
+   Two processes and two single-instance resources:
+
+        P1 --requests--> R2
+        R2 --held by---> P2
+        P2 --requests--> R1
+        R1 --held by---> P1
+
+   As a diagram:
+
+          +-----+   request    +-----+
+          | P1  | -----------> | R2  |
+          +-----+              +-----+
+             ^                    |
+             | held by            | held by
+             |                    v
+          +-----+   request    +-----+
+          | R1  | <----------- | P2  |
+          +-----+              +-----+
+
+   Following the arrows: P1 -> R2 -> P2 -> R1 -> P1. This is a cycle.
+
+RULES FOR READING A RAG
+
+   1. If the graph contains NO cycle, there is no deadlock.
+   2. If the graph contains a cycle AND every resource involved has only ONE
+      instance, there IS a deadlock.
+   3. If the graph contains a cycle and some resources have MULTIPLE
+      instances, a deadlock MAY exist. It depends on whether the instances
+      can be released by processes outside the cycle.
+
+EXAMPLE: A CYCLE WITHOUT DEADLOCK
+
+   Suppose R1 has two instances. P1 holds one instance and P3 holds the other.
+   P2 holds R2 and requests R1. P1 requests R2.
+
+      Cycle:  P1 -> R2 -> P2 -> R1 -> P1
+
+   P3 is not part of the cycle and is not waiting for anything. When P3
+   finishes, it releases its instance of R1. P2 can then obtain R1, finish,
+   and release R2, which lets P1 proceed. The system recovers, so the cycle
+   was not a deadlock.
+
+WAIT-FOR GRAPH
+
+When all resources are single-instance, we can simplify the RAG by removing
+the resource nodes. The result is a WAIT-FOR GRAPH, which has only process
+nodes. There is an edge Pi -> Pj if Pi is waiting for a resource that Pj
+holds. A deadlock exists if and only if the wait-for graph contains a cycle.
+This graph is the standard data structure used by deadlock detectors in
+operating systems and databases.
+
+
+
+================================================================================
+6. A DEADLOCK IN CODE
+================================================================================
+
+PYTHON EXAMPLE (DEADLOCKS)
+
+The following program deadlocks reliably, because a short sleep makes the
+unlucky interleaving certain.
+
+    import threading
+    import time
+
+    lock_a = threading.Lock()
+    lock_b = threading.Lock()
+
+    def worker_1():
+        with lock_a:
+            print("Worker 1 holds A")
+            time.sleep(0.1)               # give worker 2 time to take B
+            with lock_b:                  # blocks forever
+                print("Worker 1 holds A and B")
+
+    def worker_2():
+        with lock_b:
+            print("Worker 2 holds B")
+            time.sleep(0.1)
+            with lock_a:                  # blocks forever
+                print("Worker 2 holds B and A")
+
+    t1 = threading.Thread(target=worker_1)
+    t2 = threading.Thread(target=worker_2)
+    t1.start(); t2.start()
+    t1.join();  t2.join()                 # never returns
+
+The output is:
+
+    Worker 1 holds A
+    Worker 2 holds B
+
+and then the program hangs.
+
+FIX 1: A GLOBAL LOCK ORDER
+
+If every thread acquires the locks in the same order, a circular wait cannot
+form:
+
+    def worker_1():
+        with lock_a:
+            with lock_b:
+                ...
+
+    def worker_2():
+        with lock_a:                      # same order as worker_1
+            with lock_b:
+                ...
+
+FIX 2: TIMEOUTS
+
+Use a timed acquire, and back off if the second lock cannot be obtained:
+
+    import random
+
+    def worker(first, second, name):
+        while True:
+            with first:
+                if second.acquire(timeout=0.05):
+                    try:
+                        print(name, "has both locks")
+                        return
+                    finally:
+                        second.release()
+            time.sleep(random.uniform(0, 0.05))   # random back-off
+
+The random delay prevents both threads from retrying in lockstep, which would
+turn the deadlock into a livelock.
+
+JAVA EXAMPLE
+
+    public class DeadlockDemo {
+        private static final Object lockA = new Object();
+        private static final Object lockB = new Object();
+
+        public static void main(String[] args) {
+            Thread t1 = new Thread(() -> {
+                synchronized (lockA) {
+                    pause();
+                    synchronized (lockB) {
+                        System.out.println("T1 done");
+                    }
+                }
+            });
+            Thread t2 = new Thread(() -> {
+                synchronized (lockB) {
+                    pause();
+                    synchronized (lockA) {
+                        System.out.println("T2 done");
+                    }
+                }
+            });
+            t1.start();
+            t2.start();
+        }
+
+        private static void pause() {
+            try { Thread.sleep(100); } catch (InterruptedException e) { }
+        }
+    }
+
+Java can detect this at runtime. A thread dump taken with jstack, or with
+kill -3 on Unix, reports "Found one Java-level deadlock" and lists the
+threads and monitors involved.
+
+HIDDEN DEADLOCKS
+
+Deadlocks do not always appear as two neat adjacent lock statements. Common
+disguised forms include:
+
+   - Calling a callback or virtual method while holding a lock. The callback
+     may acquire another lock that another thread holds while waiting for
+     the first.
+   - Lock acquisition spread across several methods or classes, so the order
+     is not visible in any single function.
+   - A synchronized method calling another object's synchronized method, and
+     vice versa.
+   - Waiting for a thread to finish (join) or for a future to complete while
+     holding a lock that the other thread needs.
+   - A thread pool whose workers all block waiting for tasks that are queued
+     behind them in the same pool (thread starvation deadlock).
+   - Re-acquiring a non-reentrant lock in the same thread. A thread can
+     deadlock with itself.
+
+Example of a self-deadlock:
+
+    lock = threading.Lock()          # not reentrant
+
+    def outer():
+        with lock:
+            inner()
+
+    def inner():
+        with lock:                   # same thread, same lock: blocks forever
+            ...
+
+Using threading.RLock (a reentrant lock) allows the same thread to acquire
+the lock multiple times.
+
+
+================================================================================
+7. THE DINING PHILOSOPHERS PROBLEM
+================================================================================
+
+The dining philosophers problem, formulated by Edsger Dijkstra in 1965 and
+given its present form by Tony Hoare, is the classic illustration of
+deadlock and resource sharing.
+
+THE SETUP
+
+   Five philosophers sit around a circular table. Between each pair of
+   neighboring philosophers lies a single chopstick, for five chopsticks in
+   total. A philosopher alternates between thinking and eating. To eat, a
+   philosopher needs BOTH the chopstick on their left and the one on their
+   right.
+
+              P0
+          c0      c4
+        P1          P4
+          c1      c3
+            P2   P3
+               c2
+
+THE NAIVE SOLUTION
+
+   Each philosopher does the following:
+
+       think()
+       pick up left chopstick
+       pick up right chopstick
+       eat()
+       put down right chopstick
+       put down left chopstick
+
+   If all five philosophers pick up their left chopstick at the same moment,
+   each is holding one chopstick and waiting for the right one, which is held
+   by a neighbor. All four Coffman conditions hold:
+
+       Mutual exclusion:  a chopstick can be held by one philosopher.
+       Hold and wait:     each holds one and waits for another.
+       No preemption:     chopsticks are not taken by force.
+       Circular wait:     P0 waits for P1, P1 for P2, ..., P4 for P0.
+
+   Everyone starves.
+
+SOLUTIONS
+
+   1. RESOURCE ORDERING. Number the chopsticks 0 to 4. Each philosopher
+      picks up the lower-numbered chopstick first. Four philosophers pick up
+      their left chopstick first, but the philosopher between chopstick 4
+      and chopstick 0 picks up chopstick 0 first. That breaks the circular
+      wait.
+
+   2. LIMIT THE DINERS. Allow at most four philosophers to sit down at once
+      (for example, with a counting semaphore of value 4). With five
+      chopsticks and four diners, at least one diner can always acquire two
+      chopsticks.
+
+   3. ASYMMETRIC SOLUTION. Odd-numbered philosophers pick up the left
+      chopstick first, even-numbered philosophers the right first.
+
+   4. ATOMIC PICKUP (A WAITER). A philosopher picks up both chopsticks as a
+      single atomic action, or only when both are available. This removes
+      hold and wait. A central waiter or a lock that guards the pickup does
+      this, but reduces concurrency.
+
+   5. CHANDY-MISRA. A distributed algorithm using "dirty" and "clean" forks
+      and request tokens. It avoids deadlock and starvation without a central
+      coordinator.
+
+PYTHON SKETCH OF THE ORDERED SOLUTION
+
+    import threading, time, random
+
+    N = 5
+    forks = [threading.Lock() for _ in range(N)]
+
+    def philosopher(i):
+        left, right = i, (i + 1) % N
+        first, second = min(left, right), max(left, right)   # global order
+        for _ in range(3):
+            time.sleep(random.random() * 0.01)               # think
+            with forks[first]:
+                with forks[second]:
+                    time.sleep(random.random() * 0.01)       # eat
+            print("Philosopher", i, "finished a meal")
+
+    threads = [threading.Thread(target=philosopher, args=(i,)) for i in range(N)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+
+================================================================================
+8. DEADLOCK VS. LIVELOCK VS. STARVATION
+================================================================================
+
+These three problems are related but different. All of them mean that some
+activity fails to make progress.
+
+DEADLOCK
+   Processes are blocked and waiting. They use no CPU. Nothing changes.
+   Example: two threads, each waiting for the lock the other holds.
+
+LIVELOCK
+   Processes are active, changing state in response to one another, but
+   making no useful progress. They use CPU. Example: two people in a corridor
+   keep stepping aside in the same direction. A network example: two nodes
+   repeatedly detect a collision, back off for the same time, and collide
+   again. A programming example: two threads repeatedly acquire a lock, fail
+   to get the second, release the first, and retry in lockstep.
+
+STARVATION
+   A process is ready to run but is never given the resource it needs because
+   other processes always take precedence. The system as a whole makes
+   progress, but one participant does not. Example: a low-priority thread
+   never gets CPU time because higher-priority threads keep arriving, or a
+   writer never gets a read-write lock because readers continually hold it.
+
+COMPARISON
+
+   Property             Deadlock         Livelock          Starvation
+   -----------------    -------------    --------------    -----------------
+   Processes state      Blocked          Running           Ready or waiting
+   CPU use              None             High              Normal overall
+   System progress      None (subset)    None (subset)     Others progress
+   Typical cause        Circular wait    Unlucky retries   Unfair scheduling
+   Typical remedy       Order/avoid      Random back-off   Aging, fair locks
+
+AGING
+
+A standard remedy for starvation is AGING: the longer a process waits, the
+higher its priority becomes, until it must eventually be served.
+
+
+
+================================================================================
+9. STRATEGIES FOR HANDLING DEADLOCK
+================================================================================
+
+There are four broad approaches.
+
+   1. IGNORE THE PROBLEM (the "ostrich algorithm"). Pretend deadlocks never
+      happen. If one does, a human restarts the system. Most general-purpose
+      operating systems, including UNIX and Windows, use this approach for
+      most resources, because deadlocks are rare and prevention or detection
+      costs performance and complexity. The user kills the stuck program.
+
+   2. PREVENTION. Design the system so that at least one of the four Coffman
+      conditions can never hold. Deadlock becomes structurally impossible.
+
+   3. AVOIDANCE. Allow all four conditions in principle, but have the system
+      examine each resource request and refuse any request that could lead
+      to an unsafe state. This requires advance information about the
+      maximum resources each process may need.
+
+   4. DETECTION AND RECOVERY. Allow deadlocks to occur, detect them
+      periodically, and then break them by terminating or rolling back
+      processes or preempting resources.
+
+   Approach         When it is used                          Cost
+   --------------   --------------------------------------   ----------------
+   Ignore           Deadlocks are rare and cheap to fix      None
+   Prevention       Programmers control the lock design      Lower concurrency
+   Avoidance        Maximum needs are known in advance       Run-time checks
+   Detect/recover   Transactions can be rolled back          Detection overhead
+
+
+================================================================================
+10. DEADLOCK PREVENTION
+================================================================================
+
+Prevention attacks one Coffman condition at a time.
+
+10.1 ATTACKING MUTUAL EXCLUSION
+
+Make resources shareable wherever possible. Read-only files, immutable data,
+and lock-free structures need no exclusive access. Spooling is a classic
+example: instead of letting processes access a printer directly, they write
+to a spool queue, and only the printer daemon touches the printer.
+
+Limitation: some resources are inherently non-shareable (a mutable data
+structure, a write lock). So this approach cannot be applied universally.
+
+10.2 ATTACKING HOLD AND WAIT
+
+Require that a process never hold one resource while waiting for another.
+Two common protocols:
+
+   - REQUEST ALL AT ONCE. A process must request every resource it will need
+     before it begins, and starts only when all are granted.
+   - RELEASE BEFORE REQUESTING. A process wanting a new resource must first
+     release everything it holds, then request the full set again.
+
+Drawbacks:
+
+   - Low resource utilization: resources are held long before they are used.
+   - Starvation: a process needing several popular resources may never see
+     them all free simultaneously.
+   - Processes often cannot predict all their needs in advance.
+
+A related practical technique is TRY-LOCK: attempt to acquire the second lock
+without blocking. If that fails, release the first lock and start again.
+
+    while True:
+        lock_a.acquire()
+        if lock_b.acquire(blocking=False):
+            break                     # got both
+        lock_a.release()              # give up A so others can progress
+        time.sleep(random.uniform(0, 0.01))
+
+10.3 ATTACKING NO PREEMPTION
+
+Allow resources to be taken from processes.
+
+   - If a process holding resources requests another that is unavailable,
+     all the resources it holds are implicitly released (preempted). It
+     restarts only when it can regain everything it needs.
+   - Alternatively, if a requested resource is held by a process that is
+     itself waiting, preempt that process's resources and give them to the
+     requester.
+
+This works well for resources whose state can be saved and restored, such as
+CPU registers or memory pages. It does not work for resources like a printer
+mid-job, or a lock protecting a half-updated data structure, since taking the
+resource away would corrupt state.
+
+10.4 ATTACKING CIRCULAR WAIT (RESOURCE ORDERING)
+
+This is the most widely used technique in practice. Assign a unique number to
+every resource type, and require each process to request resources only in
+increasing order of number.
+
+   PROOF THAT CIRCULAR WAIT CANNOT OCCUR
+
+   Suppose a cycle exists: P0 waits for a resource held by P1, P1 waits for
+   one held by P2, ..., Pn waits for one held by P0. Let F be the numbering
+   function. Since Pi holds a resource and requests another, and must request
+   in increasing order, F(held by Pi) < F(requested by Pi). But the thing Pi
+   requests is held by P(i+1), so F(held by P(i+1)) = F(requested by Pi).
+   Chaining these around the cycle gives:
+
+        F(R0) < F(R1) < F(R2) < ... < F(Rn) < F(R0)
+
+   which says F(R0) < F(R0), a contradiction. So no cycle can exist.
+
+   PRACTICAL ORDERING RULES
+
+   - Order by a fixed hierarchy: for example, "database lock before cache
+     lock before file lock."
+   - Order locks on objects of the same type by a stable key such as an ID or
+     memory address. For a transfer between two bank accounts:
+
+        def transfer(src, dst, amount):
+            first, second = sorted((src, dst), key=lambda acc: acc.id)
+            with first.lock:
+                with second.lock:
+                    src.balance -= amount
+                    dst.balance += amount
+
+     Whichever order the caller passes the accounts, the locks are always
+     taken in ID order, so two opposite transfers (A to B and B to A) cannot
+     deadlock.
+
+   - Document the order in the code and enforce it with tooling (for
+     example, lock-order checkers or runtime lock-rank assertions).
+
+   Limitations: the order must be known and followed everywhere, which is
+   hard in large codebases and when locks are acquired through callbacks or
+   third-party code.
+
+
+================================================================================
+11. DEADLOCK AVOIDANCE AND THE BANKER'S ALGORITHM
+================================================================================
+
+Avoidance is less strict than prevention. The system lets processes request
+resources freely, but it grants a request only if doing so leaves the system
+in a SAFE STATE.
+
+SAFE AND UNSAFE STATES
+
+   A state is SAFE if there exists at least one ordering of the processes
+   (a SAFE SEQUENCE) in which each process can obtain its maximum remaining
+   needs from the currently available resources plus those released by the
+   processes earlier in the sequence, and then finish.
+
+   A state is UNSAFE if no such sequence exists.
+
+   Important relationships:
+
+      Safe state       ->  no deadlock, and none will occur if the sequence
+                           is followed.
+      Unsafe state     ->  deadlock is POSSIBLE (not certain).
+      Deadlock state   ->  a subset of unsafe states.
+
+   Avoidance therefore keeps the system inside the safe region.
+
+BANKER'S ALGORITHM (Dijkstra)
+
+The name comes from a banker who never lends out cash in a way that prevents
+satisfying all customers' maximum credit lines eventually. The algorithm is
+designed for resources with multiple instances.
+
+DATA STRUCTURES (n processes, m resource types)
+
+   Available[m]     number of free instances of each resource type
+   Max[n][m]        maximum demand of each process
+   Allocation[n][m] resources currently held by each process
+   Need[n][m]       remaining needs, where Need = Max - Allocation
+
+SAFETY ALGORITHM
+
+   1. Let Work = Available. Let Finish[i] = false for all i.
+   2. Find a process i such that Finish[i] is false and Need[i] <= Work.
+      If none exists, go to step 4.
+   3. Set Work = Work + Allocation[i]. Set Finish[i] = true. Go to step 2.
+   4. If Finish[i] is true for every i, the state is SAFE. Otherwise it is
+      UNSAFE.
+
+RESOURCE-REQUEST ALGORITHM (process i requests Request[i])
+
+   1. If Request[i] > Need[i], raise an error (the process exceeded its
+      declared maximum).
+   2. If Request[i] > Available, process i must wait.
+   3. Otherwise, pretend to grant the request:
+         Available     = Available - Request[i]
+         Allocation[i] = Allocation[i] + Request[i]
+         Need[i]       = Need[i] - Request[i]
+      Run the safety algorithm. If the resulting state is safe, grant the
+      request for real. If it is unsafe, restore the old state and make the
+      process wait.
+
+WORKED EXAMPLE
+
+Five processes P0 to P4 and three resource types A, B, C with total
+instances A = 10, B = 5, C = 7. The current state:
+
+              Allocation      Max         Need = Max - Allocation
+              A  B  C        A  B  C         A  B  C
+      P0      0  1  0        7  5  3         7  4  3
+      P1      2  0  0        3  2  2         1  2  2
+      P2      3  0  2        9  0  2         6  0  0
+      P3      2  1  1        2  2  2         0  1  1
+      P4      0  0  2        4  3  3         4  3  1
+
+   Total allocated: A = 7, B = 2, C = 5.
+   Available = (10-7, 5-2, 7-5) = (3, 3, 2).
+
+IS THE STATE SAFE?
+
+   Work = (3, 3, 2)
+
+   - P0: Need (7,4,3) > Work. Cannot run.
+   - P1: Need (1,2,2) <= (3,3,2). Run it.
+         Work = (3,3,2) + (2,0,0) = (5,3,2).
+   - P3: Need (0,1,1) <= (5,3,2). Run it.
+         Work = (5,3,2) + (2,1,1) = (7,4,3).
+   - P4: Need (4,3,1) <= (7,4,3). Run it.
+         Work = (7,4,3) + (0,0,2) = (7,4,5).
+   - P0: Need (7,4,3) <= (7,4,5). Run it.
+         Work = (7,4,5) + (0,1,0) = (7,5,5).
+   - P2: Need (6,0,0) <= (7,5,5). Run it.
+         Work = (7,5,5) + (3,0,2) = (10,5,7).
+
+   All processes can finish. The safe sequence is <P1, P3, P4, P0, P2>, so
+   the state is SAFE. (Note that the final Work equals the total resources,
+   which is a useful sanity check.)
+
+NOW PROCESS P1 REQUESTS (1, 0, 2)
+
+   Step 1: Request (1,0,2) <= Need[P1] (1,2,2). OK.
+   Step 2: Request (1,0,2) <= Available (3,3,2). OK.
+   Step 3: Pretend to grant it:
+              Available     = (2, 3, 0)
+              Allocation[P1] = (3, 0, 2)
+              Need[P1]       = (0, 2, 0)
+           Run the safety algorithm with Work = (2,3,0):
+              - P1: Need (0,2,0) <= (2,3,0). Work = (5,3,2).
+              - P3: Need (0,1,1) <= (5,3,2). Work = (7,4,3).
+              - P4: Need (4,3,1) <= (7,4,3). Work = (7,4,5).
+              - P0: Need (7,4,3) <= (7,4,5). Work = (7,5,5).
+              - P2: Need (6,0,0) <= (7,5,5). Work = (10,5,7).
+           A safe sequence <P1, P3, P4, P0, P2> still exists.
+
+   The request is GRANTED.
+
+A REQUEST THAT IS REFUSED
+
+Continue from the state reached after granting P1's request:
+
+   Available = (2, 3, 0)
+              Allocation      Need
+              A  B  C        A  B  C
+      P0      0  1  0        7  4  3
+      P1      3  0  2        0  2  0
+      P2      3  0  2        6  0  0
+      P3      2  1  1        0  1  1
+      P4      0  0  2        4  3  1
+
+Now P0 requests (0, 2, 0).
+
+   Step 1: (0,2,0) <= Need[P0] (7,4,3). OK.
+   Step 2: (0,2,0) <= Available (2,3,0). OK.
+   Step 3: Pretend to grant it:
+              Available      = (2, 1, 0)
+              Allocation[P0] = (0, 3, 0)
+              Need[P0]       = (7, 2, 3)
+           Run the safety algorithm with Work = (2,1,0):
+              - P0 needs (7,2,3): too much.
+              - P1 needs (0,2,0): needs 2 of B, only 1 available.
+              - P2 needs (6,0,0): too much of A.
+              - P3 needs (0,1,1): needs 1 of C, none available.
+              - P4 needs (4,3,1): too much.
+           No process can proceed, so the state is UNSAFE.
+
+   The request is DENIED, and P0 must wait, even though the resources are
+   physically available right now. Granting it would not necessarily cause a
+   deadlock immediately, but the system could no longer guarantee that every
+   process can finish. This is the conservative nature of avoidance.
+
+COMPLEXITY
+
+   The safety algorithm takes O(m * n^2) operations. This cost is paid on
+   every request, which is one reason avoidance is rare in general-purpose
+   systems.
+
+LIMITATIONS OF THE BANKER'S ALGORITHM
+
+   - Processes must declare their maximum needs in advance, which is
+     unrealistic for most software.
+   - The number of processes and resources must stay fixed.
+   - Processes must release resources in finite time.
+   - It is conservative: it may delay a request even though no deadlock
+     would actually have occurred.
+
+For these reasons, the algorithm is mainly of educational and theoretical
+importance, though it is used in some specialized and embedded systems with
+known workloads.
+
+
+
+================================================================================
+12. DEADLOCK DETECTION
+================================================================================
+
+Instead of preventing deadlock, a system may let it happen and then look for
+it. Detection needs two things: an algorithm to find deadlocks, and a policy
+for when to run it.
+
+12.1 DETECTION WITH SINGLE-INSTANCE RESOURCES
+
+Maintain a wait-for graph and search it for cycles, using depth-first search.
+
+    def has_cycle(wait_for):
+        """wait_for: dict mapping each process to the set of processes
+        it is waiting on. Returns a list forming a cycle, or None."""
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color = {p: WHITE for p in wait_for}
+        parent = {}
+
+        def dfs(u):
+            color[u] = GRAY
+            for v in wait_for.get(u, ()):
+                if color.get(v, WHITE) == GRAY:           # back edge: cycle
+                    cycle = [v, u]
+                    while cycle[-1] != v:
+                        cycle.append(parent[cycle[-1]])
+                    return cycle
+                if color.get(v, WHITE) == WHITE:
+                    parent[v] = u
+                    found = dfs(v)
+                    if found:
+                        return found
+            color[u] = BLACK
+            return None
+
+        for p in list(wait_for):
+            if color[p] == WHITE:
+                result = dfs(p)
+                if result:
+                    return result
+        return None
+
+    graph = {"T1": {"T2"}, "T2": {"T3"}, "T3": {"T1"}, "T4": {"T1"}}
+    print(has_cycle(graph))        # a cycle among T1, T2, T3
+
+The cost is O(n + e) for n processes and e edges. Any process on a cycle is
+deadlocked. T4 above is waiting on a deadlocked process but is not itself in
+the cycle; it is blocked indirectly.
+
+12.2 DETECTION WITH MULTIPLE-INSTANCE RESOURCES
+
+The detection algorithm resembles the safety algorithm of the Banker's
+algorithm, but uses current REQUESTS instead of maximum needs.
+
+   Data: Available[m], Allocation[n][m], Request[n][m]
+
+   1. Work = Available. For each i, Finish[i] = true if Allocation[i] is all
+      zeros (it holds nothing), otherwise false.
+   2. Find i with Finish[i] == false and Request[i] <= Work. If none, go to
+      step 4.
+   3. Work = Work + Allocation[i]. Finish[i] = true. Go to step 2.
+   4. Any process with Finish[i] == false is deadlocked.
+
+The optimistic assumption is that a process whose request can be satisfied
+will finish and return its resources. If that assumption turns out wrong
+later, the next run of the algorithm will find the deadlock.
+
+Complexity: O(m * n^2).
+
+12.3 WHEN TO RUN DETECTION
+
+   - On every blocked request. This finds deadlocks immediately but is
+     costly.
+   - At fixed intervals (for example, every few seconds or minutes).
+   - When CPU utilization drops below a threshold, which can signal that
+     many processes are stuck.
+   - Only after a lock wait exceeds a timeout. Many databases do this.
+
+The longer the delay, the more processes may be caught in the deadlock, and
+the harder it becomes to tell which process "caused" it.
+
+12.4 TIMEOUTS AS A SIMPLE DETECTOR
+
+The crudest and most common detection scheme is a timeout. If a process has
+waited for a lock longer than some limit, assume a deadlock, abort the wait,
+and retry or report an error. Timeouts are simple and work across distributed
+systems, but they produce false positives (slow but healthy operations) and
+detect problems late. Choosing the limit is a trade-off between wasted time
+and spurious failures.
+
+
+================================================================================
+13. DEADLOCK RECOVERY
+================================================================================
+
+Once a deadlock is detected, it must be broken. There are two basic options.
+
+13.1 PROCESS TERMINATION
+
+   ABORT ALL DEADLOCKED PROCESSES. Simple and certain, but expensive, since
+   all partial work is lost.
+
+   ABORT ONE PROCESS AT A TIME until the cycle is broken. After each abort,
+   re-run detection. This loses less work but costs repeated detection.
+
+   Choosing a victim. Factors include:
+
+      - process priority;
+      - how long it has run and how much work it has completed;
+      - how many resources it holds and how many more it needs;
+      - whether it is interactive or batch;
+      - how many processes would need to be terminated;
+      - how many times it has already been chosen (to avoid starvation).
+
+13.2 RESOURCE PREEMPTION
+
+Take resources away from some processes and give them to others until the
+deadlock breaks. This requires three decisions:
+
+   1. SELECT A VICTIM. Choose the process whose preemption costs the least.
+   2. ROLLBACK. The victim cannot continue as if nothing happened. It must be
+      returned to a safe state, ideally a checkpoint, and restarted from
+      there. A total rollback (abort and restart) is the simplest form.
+   3. PREVENT STARVATION. If the same process is always chosen as the victim,
+      it will never finish. Include the number of previous rollbacks in the
+      victim-selection cost, so repeated victims become less likely to be
+      chosen again.
+
+13.3 RECOVERY IN APPLICATION CODE
+
+Applications can build recovery in as well:
+
+   - Lock acquisition with timeouts, followed by release and retry with
+     random back-off.
+   - Transactions that can be rolled back and retried automatically.
+   - Watchdog threads that detect a lack of progress (for example, a missed
+     heartbeat) and restart the affected component.
+   - Supervisor processes, as in the Erlang/OTP model, that restart failed
+     workers.
+
+Recovery code must be idempotent or transactional. Retrying an operation
+that had a side effect (sending an email, charging a card) without
+protection can cause duplicate effects.
+
+
+================================================================================
+14. DEADLOCKS IN DATABASES
+================================================================================
+
+Databases are the place where most programmers meet deadlocks in everyday
+work. Transactions lock rows, pages, or tables, and concurrent transactions
+can easily wait on one another.
+
+EXAMPLE
+
+   Table: accounts(id, balance)
+
+      Transaction 1                         Transaction 2
+      -------------                         -------------
+      BEGIN;                                BEGIN;
+      UPDATE accounts SET balance = balance - 10
+         WHERE id = 1;                      UPDATE accounts SET balance = balance - 20
+                                               WHERE id = 2;
+      UPDATE accounts SET balance = balance + 10
+         WHERE id = 2;   -- waits for T2    UPDATE accounts SET balance = balance + 20
+                                               WHERE id = 1;   -- waits for T1
+
+Each transaction holds a row lock the other needs. This is a deadlock.
+
+HOW DATABASES HANDLE IT
+
+Database engines use DETECTION AND RECOVERY.
+
+   - The engine maintains a wait-for graph of transactions and runs a
+     cycle search, either continuously or when a lock wait exceeds a short
+     threshold.
+   - When it finds a cycle, it picks a victim, usually the transaction that
+     has done the least work, and rolls it back.
+   - The victim receives an error, for example:
+        PostgreSQL:   "deadlock detected" (SQLSTATE 40P01)
+        MySQL InnoDB: "Deadlock found when trying to get lock; try
+                       restarting transaction" (error 1213)
+        SQL Server:   error 1205, "chosen as the deadlock victim"
+   - The other transaction continues.
+
+The application is expected to catch this error and RETRY the whole
+transaction.
+
+    def run_with_retry(work, attempts=5):
+        for attempt in range(attempts):
+            try:
+                return work()
+            except DeadlockDetected:
+                time.sleep(random.uniform(0, 0.05 * 2 ** attempt))
+        raise RuntimeError("Giving up after repeated deadlocks")
+
+REDUCING DATABASE DEADLOCKS
+
+   1. Access tables and rows in a consistent order in every transaction. For
+      example, always update the lower account ID first.
+   2. Keep transactions short. Do not hold locks while waiting for user input
+      or calling external services.
+   3. Acquire the strongest lock early. Use SELECT ... FOR UPDATE at the
+      beginning to avoid lock upgrades (read lock followed by write lock),
+      which are a frequent cause of deadlock.
+   4. Use appropriate indexes. A query that lacks an index may scan and lock
+      many more rows than necessary, which increases the chance of conflicts.
+   5. Use the lowest isolation level that preserves correctness. Higher
+      isolation levels hold more locks for longer.
+   6. Batch updates in a consistent order (for example, sorted by primary
+      key).
+   7. Use optimistic concurrency control (version numbers, compare-and-swap)
+      for low-contention workloads so that no locks are held while working.
+   8. Read the engine's deadlock log. PostgreSQL logs deadlocks with the
+      involved queries when log_lock_waits and related settings are on; MySQL
+      provides SHOW ENGINE INNODB STATUS; SQL Server offers deadlock graphs
+      in Extended Events.
+
+Because the engine resolves deadlocks automatically, a rare deadlock in a
+database is usually a nuisance rather than a disaster, provided the
+application retries correctly. Frequent deadlocks point to a design problem.
+
+
+================================================================================
+15. DEADLOCKS IN DISTRIBUTED SYSTEMS
+================================================================================
+
+In a distributed system, resources and processes are spread over multiple
+machines. No node has a complete picture, which makes deadlock handling much
+harder.
+
+CHALLENGES
+
+   - There is no shared memory or global clock. A global wait-for graph must
+     be assembled from messages that may be delayed or lost.
+   - FALSE DEADLOCKS (phantom deadlocks) can be reported if the graph is
+     built from snapshots taken at different times. A process might appear to
+     wait for another when, in reality, the wait has already ended.
+   - Failures of nodes or networks can look identical to deadlock, since
+     both cause indefinite waiting.
+
+APPROACHES
+
+   CENTRALIZED DETECTION. One coordinator node collects local wait-for graphs
+   from all sites and searches for cycles. It is simple, but the coordinator
+   is a bottleneck and single point of failure, and phantom deadlocks are
+   possible.
+
+   HIERARCHICAL DETECTION. Sites are organized in a tree. Each node collects
+   graphs from its children. Deadlocks among sites that share a parent are
+   detected at that parent.
+
+   DISTRIBUTED (EDGE-CHASING) DETECTION. The Chandy-Misra-Haas algorithm
+   sends special PROBE messages along the wait-for edges. When a blocked
+   process receives a probe, it forwards it to the processes it is waiting
+   on. If the probe returns to the process that originated it, a cycle, and
+   therefore a deadlock, has been found. No global graph is needed.
+
+   PREVENTION USING TIMESTAMPS. Each transaction gets a unique timestamp
+   when it starts. When a transaction requests a lock held by another, the
+   system uses the timestamps to decide who waits and who aborts. Two
+   classic schemes:
+
+      WAIT-DIE (non-preemptive)
+         If the requester is OLDER than the holder, it waits.
+         If the requester is YOUNGER, it "dies" (aborts and restarts with the
+         same timestamp).
+
+      WOUND-WAIT (preemptive)
+         If the requester is OLDER, it "wounds" the holder (forces it to
+         abort and restart).
+         If the requester is YOUNGER, it waits.
+
+   In both schemes, waiting is only allowed in one direction with respect to
+   age (older waits for younger in wait-die; younger waits for older in
+   wound-wait), so a cycle of waiting transactions is impossible. Because a
+   restarted transaction keeps its original timestamp, it eventually becomes
+   the oldest and cannot starve.
+
+   TIMEOUTS. Most real distributed systems fall back on timeouts, because
+   they are simple and robust to partial failure. Distributed lock services
+   (such as those built on ZooKeeper, etcd, or Redis) use leases: a lock is
+   automatically released after a fixed time unless renewed. This prevents a
+   crashed lock holder from blocking others forever, but it requires careful
+   handling of the case in which the holder is merely slow and continues to
+   work after its lease has expired (fencing tokens are a standard solution).
+
+
+================================================================================
+16. FINDING AND DEBUGGING DEADLOCKS IN PRACTICE
+================================================================================
+
+SYMPTOMS
+
+   - A program or request hangs and never finishes.
+   - CPU usage is near zero while threads exist.
+   - A thread pool appears exhausted, and queued requests time out.
+   - A particular operation hangs only under load or only intermittently.
+
+GENERAL APPROACH
+
+   1. CAPTURE THE STATE WHILE IT IS STUCK. A restart destroys the evidence.
+      Take thread dumps or stack traces of all threads.
+   2. IDENTIFY WHO HOLDS WHAT AND WHO WAITS FOR WHAT. Build the wait-for graph
+      by hand from the dumps.
+   3. LOOK FOR A CYCLE. The threads on the cycle are the deadlocked ones.
+   4. FIX THE ORDER, SCOPE, OR DESIGN of the locks involved.
+
+TOOLS BY PLATFORM
+
+   Java        jstack <pid>, jcmd <pid> Thread.print, kill -3 <pid>, VisualVM,
+               JConsole. The JVM reports "Found one Java-level deadlock" in
+               thread dumps. Programmatically, ThreadMXBean.findDeadlockedThreads()
+               returns the IDs of deadlocked threads.
+
+   Python      faulthandler.dump_traceback_later(timeout) prints all thread
+               stacks if the program is still running after a timeout. The
+               py-spy dump --pid <pid> command inspects a running process.
+
+   C / C++     gdb: attach with gdb -p <pid> and run "thread apply all bt".
+               ThreadSanitizer (-fsanitize=thread) detects lock-order
+               inversions. Helgrind (part of Valgrind) reports potential
+               lock-order violations.
+
+   Go          The runtime detects "all goroutines are asleep - deadlock!"
+               for simple cases. Send SIGQUIT or use pprof's goroutine
+               profile to see blocked goroutines. The -race flag detects data
+               races, which often accompany lock bugs.
+
+   Linux       strace -p <pid> shows whether a process is stuck in futex or
+               other blocking system calls. /proc/<pid>/stack and
+               /proc/<pid>/wchan show where the kernel thread is waiting. The
+               kernel's lockdep facility checks lock ordering at run time.
+
+   Windows     WinDbg with the !locks and !analyze -v commands; Process
+               Explorer and Resource Monitor's "Analyze Wait Chain."
+
+   Databases   PostgreSQL: pg_locks joined with pg_stat_activity.
+               MySQL: SHOW ENGINE INNODB STATUS, performance_schema tables.
+               SQL Server: deadlock graph in Extended Events.
+
+PYTHON TIMEOUT WATCHDOG EXAMPLE
+
+    import faulthandler, sys
+    faulthandler.dump_traceback_later(30, exit=False, file=sys.stderr)
+    # If the process is still running after 30 seconds, every thread's
+    # stack trace is printed, making a deadlock easy to diagnose.
+
+TESTING FOR DEADLOCKS
+
+   - Stress tests with many threads and randomized timing.
+   - Insert artificial delays (sleep or yield) between lock acquisitions to
+     widen the race window.
+   - Run lock-order checkers and sanitizers in continuous integration.
+   - Use model checkers or systematic concurrency testers, which explore
+     thread interleavings deliberately.
+   - Add timeouts to every blocking test so that a deadlock fails the test
+     instead of hanging the build.
+
+
+================================================================================
+17. BEST PRACTICES
+================================================================================
+
+DESIGN
+
+   1. Avoid sharing mutable state when possible. Prefer immutable data,
+      message passing, and thread confinement. Fewer locks mean fewer
+      deadlocks.
+   2. Hold as few locks as possible, for as short a time as possible.
+   3. Establish and document a global lock ordering. Enforce it in code
+      review and with tooling.
+   4. Never call unknown code (callbacks, listeners, overridable methods)
+      while holding a lock. Copy the data you need, release the lock, and
+      then call out.
+   5. Prefer higher-level concurrency utilities (concurrent queues, thread
+      pools, atomic variables, concurrent maps) over hand-written locking.
+   6. Do not block while holding a lock on slow operations such as network or
+      disk I/O.
+   7. Keep lock scopes small, and prefer one coarse lock over many fine
+      locks unless performance measurements prove that finer granularity is
+      necessary. Simplicity prevents bugs.
+
+IMPLEMENTATION
+
+   8. Use try-lock with timeouts for operations that may fail gracefully.
+   9. Always release locks in a finally block or use a context manager
+      (with statement, try-with-resources, RAII, defer).
+  10. Use reentrant locks where re-acquisition is legitimate, and be aware
+      that they can hide design problems.
+  11. Size thread pools carefully, and never have a task in a pool wait for
+      another task submitted to the same bounded pool.
+  12. Use separate pools for tasks that depend on each other.
+  13. For databases, retry transactions on deadlock errors and keep access
+      order consistent.
+
+OPERATIONS
+
+  14. Add timeouts to all remote calls and lock waits.
+  15. Monitor for stuck threads, long lock waits, and queue growth.
+  16. Make it easy to capture thread dumps in production.
+  17. Log lock acquisition order in debug builds.
+
+A SHORT CHECKLIST FOR CODE REVIEW
+
+   - Does any code path take two locks? In which order? Is it the same
+     everywhere?
+   - Is any lock held while calling external or overridable code?
+   - Is any lock held across I/O or a blocking wait?
+   - Can a thread re-enter code that takes a non-reentrant lock?
+   - Are all lock releases guaranteed, including on exceptions?
+   - Can a pool task wait on another task in the same pool?
+
+
+================================================================================
+18. REVIEW QUESTIONS
+================================================================================
+
+   1. Define deadlock. How does it differ from livelock and starvation?
+   2. List the four Coffman conditions. Explain why each is necessary.
+   3. Why is a cycle in a resource allocation graph sufficient for deadlock
+      with single-instance resources but not with multiple-instance ones?
+   4. Give an example of code that deadlocks and two different ways to fix
+      it.
+   5. Explain why imposing a global ordering on locks prevents circular
+      wait. Write the argument as a short proof.
+   6. How would you solve the dining philosophers problem with five
+      philosophers using a semaphore?
+   7. What is the difference between a safe state and an unsafe state? Is
+      every unsafe state a deadlock?
+   8. Run the Banker's safety algorithm on a small example of your own.
+   9. Why do general-purpose operating systems usually ignore deadlock?
+  10. What are the advantages and disadvantages of detecting deadlock using
+      timeouts?
+  11. How do wait-die and wound-wait prevent both deadlock and starvation?
+  12. Why do databases roll back one transaction instead of blocking both?
+  13. Describe how you would diagnose a hanging production service that you
+      suspect is deadlocked.
+  14. How can a thread deadlock with itself? How does a reentrant lock help?
+  15. Describe a thread-pool starvation deadlock and how to avoid it.
+
+
+================================================================================
+19. SUMMARY
+================================================================================
+
+A deadlock is a permanent standstill in which a group of processes each wait
+for a resource held by another member of the group. It arises only when four
+conditions hold together: mutual exclusion, hold and wait, no preemption, and
+circular wait. Breaking any one of them makes deadlock impossible.
+
+There are four ways to cope:
+
+   IGNORE     Cheapest. Acceptable when deadlocks are rare and a restart is
+              acceptable. Most desktop operating systems take this approach.
+
+   PREVENT    Design the system so one Coffman condition cannot occur. The
+              most practical technique is a global ordering of locks, which
+              makes circular wait impossible. Try-lock with back-off and
+              request-all-at-once are alternatives.
+
+   AVOID      Check every request against the system's future needs, as in
+              the Banker's algorithm, and grant it only if the system remains
+              in a safe state. Requires advance knowledge of maximum demands
+              and is rarely used outside specialized systems.
+
+   DETECT     Allow deadlocks, find them using wait-for graphs or timeouts,
+   AND        and recover by aborting or rolling back victims or preempting
+   RECOVER    resources. This is the standard approach in databases.
+
+For everyday programming, the lessons are straightforward:
+
+   - Share less state and hold fewer locks for less time.
+   - Acquire locks in a consistent global order.
+   - Never call unknown code or block on slow operations while holding a lock.
+   - Use timeouts and try-lock where failure can be handled gracefully.
+   - Retry database transactions that are chosen as deadlock victims.
+   - Make hangs diagnosable by capturing thread dumps, setting watchdog
+     timeouts, and running lock-order checkers in testing.
+
+Deadlock is a design problem more than a coding error. It is easiest to
+eliminate when the locking strategy is thought out in advance, written down,
+and applied consistently across the whole system.
+
+
+FURTHER READING
+
+   - E. G. Coffman, M. J. Elphick, A. Shoshani. "System Deadlocks." ACM
+     Computing Surveys, 1971.
+   - E. W. Dijkstra. "Cooperating Sequential Processes," 1965, and the
+     original dining philosophers formulation.
+   - Abraham Silberschatz, Peter Galvin, Greg Gagne. "Operating System
+     Concepts," chapter on deadlocks.
+   - Andrew S. Tanenbaum. "Modern Operating Systems," chapter on deadlocks.
+   - Maurice Herlihy and Nir Shavit. "The Art of Multiprocessor
+     Programming."
+   - Brian Goetz et al. "Java Concurrency in Practice," chapter on avoiding
+     liveness hazards.
+
+================================================================================
+                                END OF GUIDE
+================================================================================

@@ -1,0 +1,57 @@
+No,Unit,Topic,Subtopic,Question Type,Status
+1,System Calls & OS Basics,Operating System Overview,"Functions, goals, types (batch, multiprogramming, time-sharing, real-time)",Conceptual,Not Started
+2,System Calls & OS Basics,System Calls,"User mode vs kernel mode, trap, API vs system call",Conceptual,Not Started
+3,System Calls & OS Basics,Interrupts,"Interrupt handling, ISR, interrupt vs trap",Conceptual,Not Started
+4,Processes,Program vs Process,"Passive vs active entity, process in memory (text, data, heap, stack)",Conceptual,Not Started
+5,Processes,Process States,"New, Ready, Running, Waiting, Terminated, suspended states, state transitions",Conceptual,Not Started
+6,Processes,Process Control Block,"PCB contents, role in context switching",Conceptual,Not Started
+7,Processes,Process Creation & Termination,"fork(), exec(), wait(), exit(), counting processes created by fork",Numerical,Not Started
+8,Processes,Context Switching,"Steps, overhead, triggers",Conceptual,Not Started
+9,Processes,Special Processes,"Zombie, orphan, daemon",Conceptual,Not Started
+10,Threads,Threads vs Processes,"Shared vs private resources, benefits of multithreading",Conceptual,Not Started
+11,Threads,Threading Models,"User-level vs kernel-level, many-to-one, one-to-one, many-to-many",Conceptual,Not Started
+12,Inter-Process Communication,Shared Memory,"Setup, speed, need for synchronization",Conceptual,Not Started
+13,Inter-Process Communication,Message Passing,"Direct vs indirect, blocking vs non-blocking, buffering",Conceptual,Not Started
+14,Inter-Process Communication,Pipes Sockets Signals,"Ordinary pipes, named pipes, sockets, signals",Conceptual,Not Started
+15,CPU Scheduling,Scheduling Basics,"Criteria, preemptive vs non-preemptive, dispatcher, schedulers",Conceptual,Not Started
+16,CPU Scheduling,FCFS,"Convoy effect, Gantt chart, average waiting time",Numerical,Not Started
+17,CPU Scheduling,SJF and SRTF,"Preemptive and non-preemptive, burst prediction, starvation",Numerical,Not Started
+18,CPU Scheduling,Priority Scheduling,"Preemptive and non-preemptive, aging",Numerical,Not Started
+19,CPU Scheduling,Round Robin,"Time quantum effect, context switch overhead",Numerical,Not Started
+20,CPU Scheduling,Multilevel Queue & Feedback Queue,"Queue structure, promotion and demotion",Conceptual,Not Started
+21,CPU Scheduling,Scheduling Metrics,"Turnaround time, waiting time, response time, throughput",Numerical,Not Started
+22,CPU Scheduling,I/O Scheduling,"Disk scheduling (see Disk unit)",Numerical,Not Started
+23,Concurrency & Synchronization,Race Condition,"Shared data, non-atomic updates",Conceptual,Not Started
+24,Concurrency & Synchronization,Critical Section Problem,"Mutual exclusion, progress, bounded waiting",Conceptual,Not Started
+25,Concurrency & Synchronization,Software Solutions,"Peterson's algorithm, Dekker's algorithm, strict alternation",Conceptual,Not Started
+26,Concurrency & Synchronization,Hardware Solutions,"Test-and-set, compare-and-swap, disabling interrupts",Conceptual,Not Started
+27,Concurrency & Synchronization,Mutex Locks,"Spinlock, busy waiting",Conceptual,Not Started
+28,Concurrency & Synchronization,Semaphores,"Binary and counting, wait and signal, output of semaphore code",Numerical,Not Started
+29,Concurrency & Synchronization,Monitors,"Condition variables",Conceptual,Not Started
+30,Concurrency & Synchronization,Classic Problems,"Producer-consumer, readers-writers, dining philosophers",Conceptual,Not Started
+31,Deadlock,Deadlock Conditions,"Mutual exclusion, hold and wait, no preemption, circular wait",Conceptual,Not Started
+32,Deadlock,Resource Allocation Graph,"Cycle detection, single vs multiple instances",Conceptual,Not Started
+33,Deadlock,Deadlock Prevention,"Breaking each condition, resource ordering",Conceptual,Not Started
+34,Deadlock,Deadlock Avoidance,"Safe state, Banker's algorithm, safe sequence",Numerical,Not Started
+35,Deadlock,Detection & Recovery,"Wait-for graph, process termination, resource preemption",Conceptual,Not Started
+36,Deadlock,Minimum Resources for Deadlock Freedom,"Formula-based questions",Numerical,Not Started
+37,Memory Management,Address Binding,"Logical vs physical address, MMU, relocation",Conceptual,Not Started
+38,Memory Management,Contiguous Allocation,"Fixed and variable partitions, first fit, best fit, worst fit",Numerical,Not Started
+39,Memory Management,Fragmentation,"Internal vs external, compaction",Conceptual,Not Started
+40,Memory Management,Paging,"Page table, frame, address translation, page size calculation",Numerical,Not Started
+41,Memory Management,TLB,"Hit ratio, effective memory access time",Numerical,Not Started
+42,Memory Management,Multilevel Paging,"Page table size, inverted page table",Numerical,Not Started
+43,Memory Management,Segmentation,"Segment table, segmentation with paging",Numerical,Not Started
+44,Virtual Memory,Demand Paging,"Page fault, valid-invalid bit, effective access time",Numerical,Not Started
+45,Virtual Memory,Page Replacement,"FIFO, Optimal, LRU, Belady's anomaly",Numerical,Not Started
+46,Virtual Memory,Frame Allocation,"Equal, proportional, global vs local replacement",Conceptual,Not Started
+47,Virtual Memory,Thrashing,"Working set model, page fault frequency",Conceptual,Not Started
+48,Virtual Memory,Copy-on-Write,"Use with fork()",Conceptual,Not Started
+49,File Systems,File Concepts,"Attributes, operations, access methods",Conceptual,Not Started
+50,File Systems,Directory Structure,"Single-level, two-level, tree, acyclic graph",Conceptual,Not Started
+51,File Systems,File Allocation Methods,"Contiguous, linked, indexed, inode structure",Numerical,Not Started
+52,File Systems,Free Space Management,"Bit vector, linked list, grouping",Conceptual,Not Started
+53,File Systems,Disk Structure,"Seek time, rotational latency, transfer time",Numerical,Not Started
+54,File Systems,Disk Scheduling,"FCFS, SSTF, SCAN, C-SCAN, LOOK, C-LOOK",Numerical,Not Started
+55,File Systems,RAID,"Levels and trade-offs",Conceptual,Not Started
+56,File Systems,Protection & Security,"Access control, access matrix",Conceptual,Not Started

@@ -1,0 +1,782 @@
+==============================================================
+PROCESSES IN OPERATING SYSTEMS
+==============================================================
+
+Contents
+--------
+1.  Introduction
+2.  Program vs Process
+3.  Process in Memory
+4.  Process States
+5.  Process Control Block (PCB)
+6.  Process Creation and Termination
+7.  Process Scheduling
+8.  Scheduling Queues and Schedulers
+9.  CPU Scheduling Algorithms
+10. Context Switching
+11. Inter-Process Communication (IPC)
+12. Threads vs Processes
+13. Process Synchronization
+14. Deadlock
+15. Special Process Types (Zombie, Orphan, Daemon)
+16. Summary and Key Points
+17. Common Exam Questions
+
+
+--------------------------------------------------------------
+1. INTRODUCTION
+--------------------------------------------------------------
+
+A process is a program in execution. It is the basic unit of work in
+a modern operating system. When you double-click an application, run
+a command in a terminal, or start a background service, the operating
+system creates a process to carry out that work.
+
+The operating system is responsible for:
+
+  - Creating and deleting processes
+  - Scheduling processes on the CPU
+  - Suspending and resuming processes
+  - Providing mechanisms for process synchronization
+  - Providing mechanisms for process communication
+  - Handling deadlocks
+
+Early computers ran one program at a time. Modern systems run many
+processes at once (multiprogramming) and switch between them so
+quickly that users feel everything runs simultaneously
+(multitasking). The process abstraction makes this possible: each
+process believes it has its own CPU and its own memory, while the OS
+quietly shares the real hardware among all of them.
+
+
+--------------------------------------------------------------
+2. PROGRAM VS PROCESS
+--------------------------------------------------------------
+
+A program is a passive entity: a file stored on disk containing a
+list of instructions (for example, chrome.exe or a.out).
+
+A process is an active entity: a program that has been loaded into
+memory and is being executed, along with its current activity
+(program counter, registers, stack, and so on).
+
+  Program                          Process
+  ---------------------------      ------------------------------
+  Passive (stored on disk)         Active (lives in memory)
+  Exists until deleted             Exists only while running
+  No resources allocated           Has CPU, memory, I/O resources
+  One program on disk             Many processes can come from it
+
+Important point: one program can create several processes. If three
+users open the same text editor, there is one program but three
+separate processes, each with its own data, stack and state.
+
+
+--------------------------------------------------------------
+3. PROCESS IN MEMORY
+--------------------------------------------------------------
+
+When a process is loaded, its address space is divided into several
+sections:
+
+  High address
+  +---------------------+
+  |        Stack        |  Function parameters, return
+  |          |          |  addresses, local variables.
+  |          v          |  Grows downward.
+  |                     |
+  |     (free space)    |
+  |                     |
+  |          ^          |
+  |          |          |
+  |        Heap         |  Dynamically allocated memory
+  |                     |  (malloc, new). Grows upward.
+  +---------------------+
+  |        Data         |  Global and static variables
+  +---------------------+
+  |        Text         |  Executable code (read-only)
+  +---------------------+
+  Low address
+
+Text section:  The compiled program code. Usually read-only and
+               shareable between processes running the same program.
+Data section:  Global and static variables, initialized and
+               uninitialized (BSS).
+Heap:          Memory allocated at run time by the program.
+Stack:         Temporary data such as function arguments, return
+               addresses, and local variables. Each function call
+               pushes a stack frame; each return pops it.
+
+The stack and the heap grow toward each other. If they collide, the
+process runs out of memory (stack overflow or heap exhaustion).
+
+
+--------------------------------------------------------------
+4. PROCESS STATES
+--------------------------------------------------------------
+
+As a process executes, it changes state. The five-state model is:
+
+  NEW         The process is being created.
+  READY       The process is loaded and waiting to be assigned to
+              the CPU.
+  RUNNING     Instructions are being executed on the CPU.
+  WAITING     (also BLOCKED) The process is waiting for an event,
+              such as I/O completion or a signal.
+  TERMINATED  The process has finished execution.
+
+State transitions:
+
+  New ---------(admitted)--------------> Ready
+  Ready -------(scheduler dispatch)----> Running
+  Running -----(interrupt / time up)---> Ready
+  Running -----(I/O or event wait)-----> Waiting
+  Waiting -----(I/O or event done)-----> Ready
+  Running -----(exit)------------------> Terminated
+
+Key observations:
+
+  - Only one process per CPU core can be in the Running state at a
+    time. Many can be Ready or Waiting.
+  - A process never goes directly from Waiting to Running. It must
+    return to Ready and be picked by the scheduler.
+  - Preemption (Running to Ready) happens when a timer interrupt
+    fires or a higher-priority process arrives.
+
+Extended states (seven-state model):
+
+  SUSPENDED READY     Ready process swapped out of main memory to
+                      disk.
+  SUSPENDED WAITING   Waiting process swapped out to disk.
+
+Swapping frees memory when the system is overloaded. The medium-term
+scheduler decides which processes to swap out and back in.
+
+
+--------------------------------------------------------------
+5. PROCESS CONTROL BLOCK (PCB)
+--------------------------------------------------------------
+
+The operating system represents each process with a data structure
+called the Process Control Block, also known as the task control
+block. It stores everything the OS needs to manage and resume the
+process.
+
+Typical contents of a PCB:
+
+  1. Process ID (PID)           Unique identifier.
+  2. Process state              New, Ready, Running, Waiting, etc.
+  3. Program counter            Address of the next instruction.
+  4. CPU registers              Accumulators, index registers, stack
+                                pointers, general-purpose registers.
+  5. CPU scheduling info        Priority, pointers to scheduling
+                                queues, other scheduling parameters.
+  6. Memory management info     Base/limit registers, page tables or
+                                segment tables.
+  7. Accounting info            CPU time used, time limits, job or
+                                account numbers.
+  8. I/O status info            List of open files, allocated I/O
+                                devices.
+  9. Parent and child info      Parent PID, list of child processes.
+
+Why the PCB matters: when the OS switches from one process to
+another, it saves the state of the old process into its PCB and
+loads the saved state from the new process's PCB. Without the PCB, a
+process could not be paused and resumed correctly.
+
+In Linux, the PCB is implemented as the structure task_struct.
+All PCBs are kept in a process table maintained by the kernel.
+
+
+--------------------------------------------------------------
+6. PROCESS CREATION AND TERMINATION
+--------------------------------------------------------------
+
+6.1 Process Creation
+
+A process can create new processes. The creator is the parent, and
+the new process is the child. Repeated creation forms a process
+tree. In UNIX/Linux, the root of the tree is init (PID 1), or
+systemd on modern distributions.
+
+Reasons for process creation:
+
+  - System initialization (boot)
+  - A user request (opening an application)
+  - A running process requesting a new process (system call)
+  - Starting a batch job
+
+Resource sharing options:
+
+  - Parent and child share all resources
+  - Child shares a subset of the parent's resources
+  - Parent and child share no resources
+
+Execution options:
+
+  - Parent and child run concurrently
+  - Parent waits until the child terminates
+
+Address space options:
+
+  - Child is a duplicate of the parent (same program and data)
+  - Child has a new program loaded into it
+
+6.2 UNIX/Linux Process Creation
+
+fork():   Creates a new process by duplicating the calling process.
+          The child gets a copy of the parent's address space.
+          Returns 0 to the child, and the child's PID to the
+          parent. Returns -1 on failure.
+
+exec():   Replaces the process's memory with a new program. Usually
+          called by the child after fork().
+
+wait():   Parent waits for a child to finish and collects its exit
+          status.
+
+exit():   Terminates the calling process and releases its resources.
+
+Example in C:
+
+  #include <stdio.h>
+  #include <unistd.h>
+  #include <sys/wait.h>
+
+  int main() {
+      pid_t pid = fork();
+
+      if (pid < 0) {
+          printf("Fork failed\n");
+          return 1;
+      } else if (pid == 0) {
+          /* child process */
+          execlp("/bin/ls", "ls", NULL);
+      } else {
+          /* parent process */
+          wait(NULL);
+          printf("Child complete\n");
+      }
+      return 0;
+  }
+
+Modern systems use copy-on-write: parent and child initially share
+the same physical pages, and a page is copied only when one of them
+modifies it. This makes fork() cheap.
+
+6.3 Windows Process Creation
+
+Windows uses CreateProcess(), which creates a process and loads a
+specified program in a single call. It takes many parameters
+(security attributes, inheritance flags, priority, and so on).
+
+6.4 Process Termination
+
+A process terminates when:
+
+  - It finishes executing its last statement and calls exit()
+    (normal exit)
+  - It exits with an error (voluntary)
+  - A fatal error occurs, such as an illegal instruction or divide
+    by zero (involuntary)
+  - Another process kills it, e.g. with kill() (involuntary)
+
+A parent may terminate a child if the child has exceeded its
+resource allocation, the task is no longer needed, or the parent is
+exiting and the OS does not allow orphans (cascading termination).
+
+On termination, the OS reclaims memory, closes open files, and
+releases I/O devices. The exit status is passed to the parent.
+
+
+--------------------------------------------------------------
+7. PROCESS SCHEDULING
+--------------------------------------------------------------
+
+The objective of multiprogramming is to have some process running at
+all times to maximize CPU utilization. The objective of time sharing
+is to switch the CPU among processes so frequently that users can
+interact with each program while it runs.
+
+The process scheduler selects an available process for execution on
+the CPU. With a single CPU core, only one process runs at a time;
+the rest wait until the CPU is free and can be rescheduled.
+
+Scheduling criteria:
+
+  CPU utilization    Keep the CPU as busy as possible.
+  Throughput         Number of processes completed per time unit.
+  Turnaround time    Time from submission to completion.
+  Waiting time       Total time spent in the ready queue.
+  Response time      Time from submission to first response.
+  Fairness           Every process gets a reasonable share of CPU.
+
+Goal: maximize CPU utilization and throughput; minimize turnaround,
+waiting, and response time.
+
+Formulas:
+
+  Turnaround Time = Completion Time - Arrival Time
+  Waiting Time    = Turnaround Time - Burst Time
+  Response Time   = First CPU Time - Arrival Time
+
+Preemptive vs non-preemptive scheduling:
+
+  Non-preemptive:  Once the CPU is given to a process, it keeps it
+                   until it terminates or switches to waiting.
+  Preemptive:      The CPU can be taken away from a running process
+                   (timer interrupt, higher-priority arrival).
+
+
+--------------------------------------------------------------
+8. SCHEDULING QUEUES AND SCHEDULERS
+--------------------------------------------------------------
+
+8.1 Queues
+
+  Job queue:         All processes in the system.
+  Ready queue:       Processes in main memory, ready and waiting to
+                     execute. Usually a linked list of PCBs.
+  Device queues:     Processes waiting for a particular I/O device.
+                     Each device has its own queue.
+
+A process migrates between these queues during its lifetime.
+
+8.2 Types of Schedulers
+
+Long-term scheduler (job scheduler):
+  Selects which processes from the pool on disk are loaded into
+  memory for execution. Controls the degree of multiprogramming.
+  Runs infrequently (seconds or minutes).
+
+Short-term scheduler (CPU scheduler):
+  Selects which ready process runs next on the CPU. Runs very
+  frequently (every few milliseconds), so it must be fast.
+
+Medium-term scheduler:
+  Swaps processes out of memory and back in later to reduce the
+  degree of multiprogramming. Used in time-sharing systems.
+
+8.3 Process Types
+
+  I/O-bound process:  Spends more time doing I/O than computation;
+                      many short CPU bursts.
+  CPU-bound process:  Spends more time doing computation; few long
+                      CPU bursts.
+
+A good long-term scheduler selects a balanced mix of both types so
+that the CPU and the I/O devices stay busy.
+
+8.4 Dispatcher
+
+The dispatcher gives control of the CPU to the process chosen by the
+short-term scheduler. It performs context switching, switching to
+user mode, and jumping to the correct location in the user program.
+The time it takes to stop one process and start another is the
+dispatch latency.
+
+
+--------------------------------------------------------------
+9. CPU SCHEDULING ALGORITHMS
+--------------------------------------------------------------
+
+9.1 First-Come, First-Served (FCFS)
+
+  - Processes are executed in order of arrival.
+  - Non-preemptive, implemented with a FIFO queue.
+  - Simple and fair in arrival order.
+  - Problem: convoy effect. A long process at the front makes all
+    short processes behind it wait.
+
+  Example:
+    Process   Burst Time
+    P1        24
+    P2        3
+    P3        3
+
+    Gantt chart: | P1 (0-24) | P2 (24-27) | P3 (27-30) |
+    Waiting times: P1 = 0, P2 = 24, P3 = 27
+    Average waiting time = (0 + 24 + 27) / 3 = 17 ms
+
+    If the order were P2, P3, P1, the average would drop to 3 ms.
+
+9.2 Shortest Job First (SJF)
+
+  - The process with the smallest next CPU burst runs first.
+  - Provably gives the minimum average waiting time.
+  - Can be non-preemptive or preemptive. Preemptive SJF is called
+    Shortest Remaining Time First (SRTF).
+  - Problem: the length of the next burst is not known in advance,
+    so it must be predicted (exponential averaging of past bursts).
+  - Problem: starvation of long processes.
+
+  Prediction formula:
+    next = alpha * (last actual burst) + (1 - alpha) * (last
+    prediction), where 0 <= alpha <= 1.
+
+9.3 Priority Scheduling
+
+  - Each process has a priority; the highest priority runs first.
+  - Can be preemptive or non-preemptive.
+  - Problem: starvation (low-priority processes may never run).
+  - Solution: aging, which gradually increases the priority of
+    processes that wait a long time.
+
+9.4 Round Robin (RR)
+
+  - Designed for time-sharing systems.
+  - Each process gets a small unit of CPU time called a time
+    quantum (typically 10 to 100 ms), then is preempted and put at
+    the back of the ready queue.
+  - Preemptive and fair.
+  - Performance depends on the quantum size:
+      Very large quantum  -> behaves like FCFS.
+      Very small quantum  -> too many context switches, high
+                             overhead.
+    A rule of thumb: about 80 percent of CPU bursts should be
+    shorter than the quantum.
+
+  Example (quantum = 4):
+    Process   Burst Time
+    P1        24
+    P2        3
+    P3        3
+
+    Gantt: | P1 0-4 | P2 4-7 | P3 7-10 | P1 10-14 | P1 14-18 |
+           | P1 18-22 | P1 22-26 | P1 26-30 |
+    Waiting: P1 = 6, P2 = 4, P3 = 7. Average = 5.67 ms.
+
+9.3 Multilevel Queue Scheduling
+
+  - The ready queue is split into separate queues, such as
+    foreground (interactive) and background (batch).
+  - Each queue has its own scheduling algorithm (for example RR for
+    foreground, FCFS for background).
+  - Scheduling among queues is usually fixed-priority or time-sliced.
+  - Processes are permanently assigned to one queue.
+
+9.4 Multilevel Feedback Queue
+
+  - Like multilevel queue, but processes can move between queues.
+  - A process that uses too much CPU time is moved to a lower
+    priority queue. A process that waits too long is moved up
+    (aging).
+  - Favors I/O-bound and interactive processes.
+  - Most flexible and most complex; used in many real systems.
+
+Comparison summary:
+
+  Algorithm     Preemptive?   Starvation?   Notes
+  -----------   -----------   -----------   ----------------------
+  FCFS          No            No            Convoy effect
+  SJF           Optional      Yes           Optimal avg waiting time
+  Priority      Optional      Yes           Fix with aging
+  Round Robin   Yes           No            Good response time
+  MLQ           Yes           Yes           Fixed queue assignment
+  MLFQ          Yes           Possible      Adaptive, complex
+
+
+--------------------------------------------------------------
+10. CONTEXT SWITCHING
+--------------------------------------------------------------
+
+A context switch occurs when the CPU switches from one process to
+another. The kernel:
+
+  1. Saves the state (context) of the current process into its PCB.
+  2. Selects the next process (scheduler).
+  3. Loads the saved state of the new process from its PCB.
+  4. Resumes execution of the new process.
+
+Context includes the program counter, CPU registers, and memory
+management information.
+
+Triggers:
+
+  - Timer interrupt (time slice expired)
+  - I/O request or completion
+  - A higher-priority process becoming ready
+  - A system call that blocks
+  - An interrupt or exception
+
+Context switching is pure overhead; the system does no useful user
+work while switching. Switch time depends on hardware support (number
+of registers, memory speed, special instructions) and typically takes
+a few microseconds. Also, switching can invalidate CPU caches and
+the TLB, which slows the new process initially.
+
+
+--------------------------------------------------------------
+11. INTER-PROCESS COMMUNICATION (IPC)
+--------------------------------------------------------------
+
+Processes may be independent (do not affect or get affected by other
+processes) or cooperating (can affect or be affected by others).
+Reasons for cooperation:
+
+  - Information sharing
+  - Computation speedup (parallel subtasks)
+  - Modularity
+  - Convenience
+
+Cooperating processes need IPC. The two fundamental models are:
+
+11.1 Shared Memory
+
+  - A region of memory is shared by the cooperating processes.
+  - Processes read and write data in that region.
+  - Fast: system calls are needed only to set up the region;
+    afterward, access is at memory speed.
+  - The processes themselves must ensure they do not write to the
+    same location simultaneously (synchronization needed).
+  - Classic example: producer-consumer problem with a bounded
+    buffer.
+
+11.2 Message Passing
+
+  - Processes communicate by exchanging messages through the kernel.
+  - Operations: send(message) and receive(message).
+  - Useful for smaller amounts of data and for distributed systems.
+  - Easier to implement, but slower because every message involves
+    the kernel.
+
+Design choices for message passing:
+
+  Direct communication:    Processes name each other explicitly,
+                           send(P, msg) and receive(Q, msg).
+  Indirect communication:  Messages go to and from mailboxes
+                           (ports). Processes share a mailbox.
+  Synchronous (blocking):  Sender waits until the message is
+                           received; receiver waits until a
+                           message arrives.
+  Asynchronous (non-blocking): Sender continues immediately;
+                           receiver gets a message or null.
+  Buffering:               Zero capacity, bounded capacity, or
+                           unbounded capacity queue.
+
+11.3 Other IPC Mechanisms
+
+  Pipes:         One-way (ordinary) or two-way (named / FIFO)
+                 channels. Example: ls | grep txt
+  Sockets:       Endpoints for communication, locally or across a
+                 network (IP address + port).
+  Signals:       Software notifications to a process (e.g. SIGINT,
+                 SIGKILL, SIGTERM).
+  RPC:           Remote Procedure Call, calling procedures on
+                 another machine as if local.
+  Message queues, semaphores, and memory-mapped files are also
+  commonly used.
+
+
+--------------------------------------------------------------
+12. THREADS VS PROCESSES
+--------------------------------------------------------------
+
+A thread is the smallest unit of CPU execution within a process. A
+process can have one or many threads. Threads in the same process
+share code, data, and open files, but each has its own program
+counter, registers, and stack.
+
+  Process                           Thread
+  -------------------------------   ------------------------------
+  Heavyweight                       Lightweight
+  Own address space                 Shares address space
+  Creation and switching is slow    Creation and switching is fast
+  Isolated: a crash affects only    A crash can bring down the
+  that process                      whole process
+  IPC needed to communicate         Communicate via shared memory
+  Has its own PCB                   Has a thread control block
+
+Benefits of multithreading: responsiveness, resource sharing,
+economy, and scalability on multicore processors.
+
+Threading models: many-to-one, one-to-one (Linux, Windows), and
+many-to-many.
+
+
+--------------------------------------------------------------
+13. PROCESS SYNCHRONIZATION
+--------------------------------------------------------------
+
+When several processes access shared data concurrently, the result
+may depend on the order of execution. This is a race condition.
+Example: two processes both increment a shared counter; one update
+may be lost.
+
+13.1 Critical Section Problem
+
+A critical section is a segment of code that accesses shared
+resources. A solution must satisfy three requirements:
+
+  1. Mutual exclusion: if one process is in its critical section, no
+     other may be in theirs.
+  2. Progress: if no process is in its critical section, the choice
+     of who enters next cannot be postponed indefinitely.
+  3. Bounded waiting: there is a limit on how many times others can
+     enter before a waiting process gets its turn.
+
+Structure of a process:
+
+  do {
+      entry section
+          critical section
+      exit section
+          remainder section
+  } while (true);
+
+13.2 Solutions
+
+  Peterson's algorithm:  Software solution for two processes using
+                         a flag array and a turn variable.
+  Hardware support:      Atomic instructions such as test-and-set
+                         and compare-and-swap.
+  Mutex locks:           Acquire before entering, release on exit.
+                         Simple, but busy waiting (spinlock) wastes
+                         CPU.
+  Semaphores:            An integer variable accessed only through
+                         two atomic operations:
+                             wait(S):   while (S <= 0) ; S--;
+                             signal(S): S++;
+                         Binary semaphore (0 or 1) acts like a
+                         mutex; counting semaphore manages a pool
+                         of resources.
+  Monitors:              High-level language construct that allows
+                         only one process at a time to be active
+                         inside, with condition variables.
+
+13.3 Classic Problems
+
+  Producer-Consumer (bounded buffer): Producer must not add to a
+    full buffer; consumer must not remove from an empty one.
+  Readers-Writers: Multiple readers may read together, but a writer
+    needs exclusive access.
+  Dining Philosophers: Five philosophers share five chopsticks;
+    illustrates deadlock and starvation risks.
+
+
+--------------------------------------------------------------
+14. DEADLOCK
+--------------------------------------------------------------
+
+A deadlock is a situation in which a set of processes is blocked
+forever, each waiting for a resource held by another process in the
+set.
+
+Four necessary conditions (all must hold at the same time):
+
+  1. Mutual exclusion:   A resource can be used by only one process
+                         at a time.
+  2. Hold and wait:      A process holds at least one resource while
+                         waiting for others.
+  3. No preemption:      Resources cannot be forcibly taken away.
+  4. Circular wait:      A cycle of processes exists where each
+                         waits for a resource held by the next.
+
+Handling deadlocks:
+
+  Prevention:   Ensure at least one of the four conditions can never
+                hold (for example, require all resources at once, or
+                impose a global ordering on resource requests).
+  Avoidance:    Grant a request only if the system stays in a safe
+                state. Banker's algorithm is the classic method.
+  Detection and recovery: Allow deadlocks, detect them using a
+                resource-allocation graph or wait-for graph, then
+                recover by terminating processes or preempting
+                resources.
+  Ignorance:    Pretend deadlocks never happen (the "ostrich
+                algorithm"), used by most general-purpose operating
+                systems such as UNIX and Windows because deadlocks
+                are rare and the other methods are costly.
+
+Safe state: a state in which there exists a sequence of processes
+such that each can obtain its needed resources and finish. An unsafe
+state does not always mean deadlock, but a deadlock is always in an
+unsafe state.
+
+
+--------------------------------------------------------------
+15. SPECIAL PROCESS TYPES
+--------------------------------------------------------------
+
+Zombie process:
+  A process that has finished execution but still has an entry in
+  the process table because its parent has not yet called wait() to
+  read its exit status. It uses no CPU or memory but occupies a PID.
+  Shown as "Z" or "defunct" in ps output.
+
+Orphan process:
+  A process whose parent has terminated while it is still running.
+  In UNIX/Linux, init (or systemd) adopts the orphan, becoming its
+  new parent and later reaping it.
+
+Daemon process:
+  A background process that runs without a controlling terminal,
+  usually started at boot and providing a service (for example sshd,
+  cron, httpd). Names often end in "d".
+
+Foreground and background processes:
+  A foreground process interacts directly with the user and holds
+  the terminal. A background process runs without blocking the
+  terminal (start with & in a shell).
+
+Useful Linux commands:
+
+  ps aux          List running processes
+  top / htop      Live view of process activity
+  kill <pid>      Send a signal (default SIGTERM) to a process
+  kill -9 <pid>   Force kill (SIGKILL)
+  nice / renice   Set or change process priority
+  jobs, bg, fg    Manage shell jobs
+  pstree          Show the process tree
+
+
+--------------------------------------------------------------
+16. SUMMARY AND KEY POINTS
+--------------------------------------------------------------
+
+  - A process is a program in execution with its own address space
+    (text, data, heap, stack), state, and resources.
+  - Processes move through states: New, Ready, Running, Waiting,
+    Terminated.
+  - The PCB stores all information the OS needs to manage a process
+    and is central to context switching.
+  - In UNIX, fork() creates a process and exec() loads a new
+    program; wait() and exit() manage termination.
+  - Schedulers (long-term, medium-term, short-term) decide which
+    processes get memory and CPU time.
+  - Scheduling algorithms trade off throughput, response time,
+    waiting time, and fairness: FCFS, SJF, Priority, RR, MLQ, MLFQ.
+  - Context switching has overhead but enables multitasking.
+  - Cooperating processes communicate via shared memory or message
+    passing, and need synchronization to avoid race conditions.
+  - Deadlock requires four conditions; it can be prevented,
+    avoided, detected, or ignored.
+  - Threads are lightweight units of execution inside a process.
+
+
+--------------------------------------------------------------
+17. COMMON EXAM QUESTIONS
+--------------------------------------------------------------
+
+  1. Define a process. How is it different from a program?
+  2. Draw and explain the process state diagram.
+  3. What is a PCB? List its contents.
+  4. Explain fork() and exec(). What does fork() return?
+  5. Differentiate long-term, short-term, and medium-term
+     schedulers.
+  6. What is a context switch? Why is it considered overhead?
+  7. Compare FCFS, SJF, and Round Robin with an example. Compute
+     the average waiting time.
+  8. What is the convoy effect? What is starvation and how does
+     aging solve it?
+  9. Compare shared memory and message passing for IPC.
+ 10. Differentiate process and thread.
+ 11. What is a race condition? State the critical section problem
+     requirements.
+ 12. What are the four necessary conditions for deadlock?
+ 13. Explain zombie and orphan processes.
+ 14. What is the role of a semaphore? Explain wait and signal.
+
+==============================================================
+END OF DOCUMENT
+==============================================================
