@@ -227,16 +227,29 @@ data/
 
 This file focuses on PDF ingestion.
 
+Install the optional PDF reader dependencies before running the example:
+
+```bash
+pip install llama-index-readers-file pymupdf
+```
+
 Example:
 
 ```python
 from llama_index.core import SimpleDirectoryReader
+from llama_index.readers.file import PyMuPDFReader
 
 documents = SimpleDirectoryReader(
     input_dir="data/01_pdf",
-    required_exts=[".pdf"]
+    required_exts=[".pdf"],
+    file_extractor={".pdf": PyMuPDFReader()},
 ).load_data()
 ```
+
+Passing a PDF reader explicitly is important when the optional PDF reader
+integration is not installed. Without it, `SimpleDirectoryReader` may treat a
+PDF as a generic text file and return compressed PDF bytes instead of extracted
+text.
 
 This allows us to focus specifically on PDF files.
 

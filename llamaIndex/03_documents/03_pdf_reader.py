@@ -1,4 +1,5 @@
 from llama_index.core import SimpleDirectoryReader
+from llama_index.readers.file import PyMuPDFReader
 
 
 # Load only PDF files
@@ -6,6 +7,7 @@ documents = SimpleDirectoryReader(
     input_dir="data/01_pdf",
     recursive=True,
     required_exts=[".pdf"],
+    file_extractor={".pdf": PyMuPDFReader()},
 ).load_data()
 
 
